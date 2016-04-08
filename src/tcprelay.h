@@ -1,7 +1,7 @@
 /*
- * async_connect.h - async connect
+ * tcprelay.h - tcp relay
  *
- * Copyright (C) 2014 - 2015, Xiaoxiao <i@xiaoxiao.im>
+ * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,12 +17,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef ASYNC_CONNECT_H
-#define ASYNC_CONNECT_H
+#ifndef TCPRELAY_H
+#define TCPRELAY_H
 
-#include <sys/socket.h>
+#include <libmill.h>
 
-extern void async_connect(const struct sockaddr *addr, socklen_t addrlen,
-                          void (*cb)(int, void *), void *data);
+extern void tcprelay(tcpsock sock1, tcpsock sock2);
 
-#endif // ASYNC_CONNECT_H
+#endif

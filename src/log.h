@@ -1,7 +1,7 @@
 /*
  * log.h - log functions
  *
- * Copyright (C) 2014 - 2015, Xiaoxiao <i@xiaoxiao.im>
+ * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,4 +28,4 @@ extern void __err(const char *msg);
 #define ERROR(msg)  do{__err(msg);}while(0)
 
 
-#endif // LOG_H
+#endif

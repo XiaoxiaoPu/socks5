@@ -11,7 +11,7 @@ config.*
 configure
 depcomp
 install-sh
-libtool
+libmill/
 ltmain.sh
 m4
 missing

@@ -1,7 +1,7 @@
 /*
- * socks5.c - SOCKS5 Protocol
+ * socks5.c - SOCKS5 worker
  *
- * Copyright (C) 2014 - 2015, Xiaoxiao <i@xiaoxiao.im>
+ * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,288 +18,277 @@
  */
 
 #include <arpa/inet.h>
-#include <assert.h>
 #include <errno.h>
-#include <ev.h>
-#include <netdb.h>
-#include <netinet/in.h>
+#include <libmill.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <unistd.h>
 #include "log.h"
 #include "socks5.h"
-#include "utils.h"
+#include "tcprelay.h"
 
-#define UNUSED(x) do {(void)(x);} while (0)
-#define BUF_SIZE 264
 
-typedef enum
+coroutine static void proxy(tcpsock sock, const char *host, const char *port);
+
+
+coroutine void worker(tcpsock sock)
 {
-	CLOSED = 0,
-	HELLO_RCVD,
-	HELLO_ERR,
-	HELLO_SENT,
-	REQ_RCVD,
-	REQ_ERR
-} state_t;
+    int64_t deadline = now() + 10000;
+    uint8_t buf[10];
 
-typedef struct
-{
-	int sock;
-	state_t state;
-	int len;
-	void (*cb)(int, char *, char *);
-	ev_io w_read;
-	ev_io w_write;
-	char host[257];
-	char port[15];
-	uint8_t buf[BUF_SIZE];
-} ctx_t;
+    {
+        // SOCKS5 CLIENT HELLO
+        // +-----+----------+----------+
+        // | VER | NMETHODS | METHODS  |
+        // +-----+----------+----------+
+        // |  1  |    1     | 1 to 255 |
+        // +-----+----------+----------+
+        int error = 0;
+        uint8_t ver;
+        tcprecv(sock, &ver, 1, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        // version must be 5
+        if (ver != 5)
+        {
+            error = 1;
+            goto server_hello;
+        }
 
-static void socks5_send_cb(EV_P_ ev_io *w, int revents);
-static void socks5_recv_cb(EV_P_ ev_io *w, int revents);
+        uint8_t nmethods;
+        uint8_t methods[255];
+        tcprecv(sock, &nmethods, 1, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        tcprecv(sock, methods, nmethods, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        int i;
+        for (i = 0; i < (int)nmethods; i++)
+        {
+            if (methods[i] == 0x00)
+            {
+                break;
+            }
+        }
+        if (i >= (int)nmethods)
+        {
+            error = 2;
+        }
 
-extern struct ev_loop *loop;
+        // SOCKS5 SERVER HELLO
+        // +-----+--------+
+        // | VER | METHOD |
+        // +-----+--------+
+        // |  1  |   1    |
+        // +-----+--------+
+      server_hello:
+        buf[0] = 0x05;
+        if (error == 0)
+        {
+            buf[1] = 0x00;
+        }
+        else
+        {
+            buf[1] = 0xff;
+        }
+        tcpsend(sock, buf, 2, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        tcpflush(sock, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        if (error != 0)
+        {
+            goto cleanup;
+        }
+    }
 
-void socks5_accept(int sock, void (*cb)(int, char *, char *))
-{
-	ctx_t *ctx = (ctx_t *)malloc(sizeof(ctx_t));
-	if (ctx == NULL)
-	{
-		LOG("out of memory");
-		close(sock);
-		return;
-	}
-	ctx->sock = sock;
-	ctx->cb = cb;
-	ctx->state = CLOSED;
+    {
+        // SOCKS5 CLIENT REQUEST
+        // +-----+-----+-------+------+----------+----------+
+        // | VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+        // +-----+-----+-------+------+----------+----------+
+        // |  1  |  1  | X'00' |  1   | Variable |    2     |
+        // +-----+-----+-------+------+----------+----------+
+        int error = 0;
+        uint8_t ver;
+        tcprecv(sock, &ver, 1, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        // version must be 5
+        if (ver != 5)
+        {
+            error = 1;
+            goto server_reply;
+        }
 
-	ev_io_init(&(ctx->w_read), socks5_recv_cb, ctx->sock, EV_READ);
-	ev_io_init(&(ctx->w_write), socks5_send_cb, ctx->sock, EV_WRITE);
-	ctx->w_read.data = (void *)ctx;
-	ctx->w_write.data = (void *)ctx;
+        uint8_t cmd;
+        tcprecv(sock, &cmd, 1, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        // only CONNECT supported
+        if (cmd != 0x01)
+        {
+            error = 2;
+            goto server_reply;
+        }
 
-	ev_io_start(EV_A_ &(ctx->w_read));
+        uint8_t rsv;
+        tcprecv(sock, &rsv, 1, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+
+        uint8_t atyp;
+        tcprecv(sock, &atyp, 1, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        char host[257];
+        char port[15];
+        if (atyp == 0x01)
+        {
+            // IPv4 address
+            uint8_t addr[4];
+            tcprecv(sock, addr, 4, deadline);
+            if (errno != 0)
+            {
+                goto cleanup;
+            }
+            inet_ntop(AF_INET, addr, host, INET_ADDRSTRLEN);
+        }
+        else if (atyp == 0x03)
+        {
+            // Domain name
+            uint8_t len;
+            tcprecv(sock, &len, 1, deadline);
+            if (errno != 0)
+            {
+                goto cleanup;
+            }
+            uint8_t addr[256];
+            tcprecv(sock, addr, len, deadline);
+            if (errno != 0)
+            {
+                goto cleanup;
+            }
+            memcpy(host, addr, len);
+            host[len] = '\0';
+        }
+        else if (atyp == 0x04)
+        {
+            // IPv6 address
+            uint8_t addr[16];
+            tcprecv(sock, addr, 16, deadline);
+            if (errno != 0)
+            {
+                goto cleanup;
+            }
+            inet_ntop(AF_INET6, addr, host, INET6_ADDRSTRLEN);
+        }
+        else
+        {
+            // unsupported address type
+            error = 3;
+            goto server_reply;
+        }
+
+        uint8_t _port[2];
+        tcprecv(sock, _port, 2, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        sprintf(port, "%u", ntohs(*(uint16_t *)_port));
+
+        // SOCKS5 SERVER REPLY
+        // +-----+-----+-------+------+----------+----------+
+        // | VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+        // +-----+-----+-------+------+----------+----------+
+        // |  1  |  1  | X'00' |  1   | Variable |    2     |
+        // +-----+-----+-------+------+----------+----------+
+      server_reply:
+        bzero(buf, 10);
+        buf[0] = 0x05;
+        if (error == 0)
+        {
+            buf[1] = 0x00;
+        }
+        else if (error == 1)
+        {
+            buf[1] = 0x01;
+        }
+        else if (error == 2)
+        {
+            buf[1] = 0x07;
+        }
+        else
+        {
+            buf[1] = 0x08;
+        }
+        buf[2] = 0x00;
+        buf[3] = 0x01;
+        tcpsend(sock, buf, 10, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        tcpflush(sock, deadline);
+        if (errno != 0)
+        {
+            goto cleanup;
+        }
+        if (error != 0)
+        {
+            goto cleanup;
+        }
+        go(proxy(sock, host, port));
+        return;
+    }
+
+  cleanup:
+    tcpclose(sock);
 }
 
-static void socks5_recv_cb(EV_P_ ev_io *w, int revents)
+
+coroutine static void proxy(tcpsock sock, const char *host, const char *port)
 {
-	ctx_t *ctx = (ctx_t *)(w->data);
+    int64_t deadline = now() + 10000;
 
-	UNUSED(revents);
-	assert(ctx != NULL);
+    LOG("connect %s:%d", host, atoi(port));
 
-	ev_io_stop(EV_A_ w);
+    ipaddr addr = ipremote(host, atoi(port), IPADDR_PREF_IPV4, deadline);
+    if (errno != 0)
+    {
+        tcpclose(sock);
+        return;
+    }
 
-	bzero(ctx->buf, BUF_SIZE);
-	ssize_t n = recv(ctx->sock, ctx->buf, BUF_SIZE, 0);
-	if (n <= 0)
-	{
-		if (n < 0)
-		{
-			LOG("client reset");
-		}
-		close(ctx->sock);
-		free(ctx);
-		return;
-	}
+    tcpsock conn = tcpconnect(addr, deadline);
+    if (errno != 0)
+    {
+        tcpclose(sock);
+        return;
+    }
 
-	switch (ctx->state)
-	{
-	case CLOSED:
-	{
-		// SOCKS5 HELLO
-		// +-----+----------+----------+
-		// | VER | NMETHODS | METHODS  |
-		// +-----+----------+----------+
-		// |  1  |    1     | 1 to 255 |
-		// +-----+----------+----------+
-		int error = 0;
-		if (ctx->buf[0] != 0x05)
-		{
-			error = 1;
-		}
-		uint8_t nmethods = ctx->buf[1];
-		uint8_t i;
-		for (i = 0; i < nmethods; i++)
-		{
-			if (ctx->buf[2 + i] == 0x00)
-			{
-				break;
-			}
-		}
-		if (i >= nmethods)
-		{
-			error = 2;
-		}
-		// SOCKS5 HELLO
-		// +-----+--------+
-		// | VER | METHOD |
-		// +-----+--------+
-		// |  1  |   1    |
-		// +-----+--------+
-		ctx->buf[0] = 0x05;
-		ctx->buf[1] = 0x00;
-		ctx->len = 2;
-		ctx->state = HELLO_RCVD;
-		if (error != 0)
-		{
-			ctx->state = HELLO_ERR;
-			ctx->buf[1] = 0xff;
-		}
-		ev_io_start(EV_A_ &(ctx->w_write));
-		break;
-	}
-	case HELLO_SENT:
-	{
-		// SOCKS5 REQUEST
-		// +-----+-----+-------+------+----------+----------+
-		// | VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
-		// +-----+-----+-------+------+----------+----------+
-		// |  1  |  1  | X'00' |  1   | Variable |    2     |
-		// +-----+-----+-------+------+----------+----------+
-		int error = 0;
-		if (ctx->buf[0] != 0x05)
-		{
-			error = 1;
-		}
-		if (ctx->buf[1] != 0x01)
-		{
-			// 只支持 CONNECT 命令
-			error = 2;
-		}
-		if (ctx->buf[3] == 0x01)
-		{
-			// IPv4 地址
-			inet_ntop(AF_INET, (const void *)(ctx->buf + 4), ctx->host,
-			          INET_ADDRSTRLEN);
-			sprintf(ctx->port, "%u", ntohs(*(uint16_t *)(ctx->buf + 8)));
-		}
-		else if (ctx->buf[3] == 0x03)
-		{
-			// 域名
-			memcpy(ctx->host, ctx->buf + 5, ctx->buf[4]);
-			ctx->host[ctx->buf[4]] = '\0';
-			sprintf(ctx->port, "%u",
-			        ntohs(*(uint16_t *)(ctx->buf + ctx->buf[4] + 5)));
-		}
-		else if (ctx->buf[3] == 0x04)
-		{
-			// IPv6 地址
-			inet_ntop(AF_INET6, (const void *)(ctx->buf + 4), ctx->host,
-			          INET6_ADDRSTRLEN);
-			sprintf(ctx->port, "%u", ntohs(*(uint16_t *)(ctx->buf + 20)));
-		}
-		else
-		{
-			// 不支持的地址类型
-			error = 3;
-		}
-
-		// SOCKS5 REPLY
-		// +-----+-----+-------+------+----------+----------+
-		// | VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
-		// +-----+-----+-------+------+----------+----------+
-		// |  1  |  1  | X'00' |  1   | Variable |    2     |
-		// +-----+-----+-------+------+----------+----------+
-		bzero(ctx->buf, 10);
-		ctx->buf[0] = 0x05;
-		if (error == 0)
-		{
-			ctx->buf[1] = 0x00;
-		}
-		else if (error == 1)
-		{
-			ctx->buf[1] = 0x01;
-		}
-		else if (error == 2)
-		{
-			ctx->buf[1] = 0x07;
-		}
-		else
-		{
-			ctx->buf[1] = 0x08;
-		}
-		ctx->buf[2] = 0x00;
-		ctx->buf[3] = 0x01;
-		ctx->len = 10;
-		ctx->state = REQ_RCVD;
-		if (error != 0)
-		{
-			ctx->state = REQ_ERR;
-		}
-		ev_io_start(EV_A_ &ctx->w_write);
-		break;
-	}
-	default:
-	{
-		// 不应该来到这里
-		assert(0 != 0);
-		break;
-	}
-	}
-}
-
-static void socks5_send_cb(EV_P_ ev_io *w, int revents)
-{
-	ctx_t *ctx = (ctx_t *)(w->data);
-
-	UNUSED(revents);
-	assert(ctx != NULL);
-
-	ev_io_stop(EV_A_ w);
-
-	ssize_t n = send(ctx->sock, ctx->buf, ctx->len, MSG_NOSIGNAL);
-	if (n != ctx->len)
-	{
-		if (n < 0)
-		{
-			ERROR("send");
-		}
-		close(ctx->sock);
-		free(ctx);
-		return;
-	}
-
-	switch (ctx->state)
-	{
-	case HELLO_RCVD:
-	case HELLO_ERR:
-	{
-		if (ctx->state == HELLO_RCVD)
-		{
-			ctx->state = HELLO_SENT;
-			ev_io_start(EV_A_ &(ctx->w_read));
-		}
-		else
-		{
-			close(ctx->sock);
-			free(ctx);
-		}
-		break;
-	}
-	case REQ_RCVD:
-	case REQ_ERR:
-	{
-		if (ctx->state == REQ_RCVD)
-		{
-			(ctx->cb)(ctx->sock, ctx->host, ctx->port);
-			free(ctx);
-		}
-		else
-		{
-			close(ctx->sock);
-			free(ctx);
-		}
-		break;
-	}
-	default:
-	{
-		// 不应该来到这里
-		assert(0 != 0);
-		break;
-	}
-	}
+    tcprelay(sock, conn);
+    LOG("connection closed");
 }

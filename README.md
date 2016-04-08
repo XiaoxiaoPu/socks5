@@ -4,45 +4,65 @@ A simple SOCKS5 server
 
 ## Build ##
 
-1. install libev (optional)
+### 1. Linux/OS X ###
 
-	```bash
-	# Archlinux
-	sudo pacman -S libev
-	# CentOS
-	sudo yum install libev-devel
-	# Debian/Ubuntu
-	sudo apt-get install libev-dev
-	```
+install GNU Autotools, then:
 
-2. configure and make
+```bash
+# build libmill
+curl -s -L https://github.com/sustrik/libmill/archive/master.tar.gz | tar -zxf -
+mv libmill-master libmill
+cd libmill
+./autogen.sh
+./configure
+make
+rm $(ls .libs/* | grep -v "\.a$")
+cd ../
+# build muon
+autoreconf -if
+# export CFLAGS=-march=native
+export CPPFLAGS=-I$(pwd)/libmill
+export LDFLAGS=-L$(pwd)/libmill/.libs
+./configure --prefix=/usr --sysconfdir=/etc
+make
+make check
+sudo make install
+```
 
-	```bash
-	autoreconf -if
-	./configure --prefix=/usr
-	make
-	```
 
-3. install
+### 2. Cross compile ###
 
-	```bash
-	sudo make install
-	```
+```bash
+# setup cross compile tool chain:
+export PATH="$PATH:/pato/to/cross/compile/toolchain/bin/"
+# build libmill
+curl -s -L https://github.com/sustrik/libmill/archive/master.tar.gz | tar -zxf -
+mv libmill-master libmill
+cd libmill
+./autogen.sh
+./configure --host=arm-unknown-linux-gnueabihf
+make
+rm $(ls .libs/* | grep -v "\.a$")
+cd ../
+# build muon
+autoreconf -if
+# export CFLAGS=-march=native
+export CPPFLAGS=-I$(pwd)/libmill
+export LDFLAGS=-L$(pwd)/libmill/.libs
+./configure --host=arm-unknown-linux-gnueabihf \
+    --prefix=/usr --sysconfdir=/etc
+make
+```
 
-## Cross compile ##
 
-1. setup cross compile tool chain
+### 3. Build with static linking ###
 
-2. build
+append `--enable-static` while running `./configure`.
 
-	```bash
-	autoreconf -if
-	./configure --host=arm-unknown-linux-gnueabihf --prefix=/usr
-	```
 
 ## License ##
 
-Copyright (C) 2014 - 2015, Xiaoxiao <i@xiaoxiao.im>
+Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

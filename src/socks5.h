@@ -1,7 +1,7 @@
 /*
- * socks5.h - SOCKS5 Protocol
+ * socks5.h - SOCKS5 worker
  *
- * Copyright (C) 2014 - 2015, Xiaoxiao <i@xiaoxiao.im>
+ * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@
 #ifndef SOCKS5_H
 #define SOCKS5_H
 
-#include <sys/socket.h>
+#include <libmill.h>
 
-extern void socks5_accept(int sock, void (*cb)(int, char *host, char *port));
+coroutine extern void worker(tcpsock sock);
 
 #endif

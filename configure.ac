@@ -7,17 +7,30 @@ AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([config.h])
 
 AC_CONFIG_AUX_DIR(.)
+AC_CONFIG_MACRO_DIR([m4])
+AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 
 # Checks for programs.
+: ${CFLAGS=""}
 AC_PROG_CC_C99
 AC_PROG_INSTALL
 
+# Custom options
+AC_ARG_ENABLE(
+    [static],
+    [AS_HELP_STRING([--enable-static], [build with static linking])],
+    [LDFLAGS="$LDFLAGS -static"])
+AM_CONDITIONAL(STATIC, test x"$static" = x"true")
+AC_ARG_ENABLE(
+    [debug],
+    [AS_HELP_STRING([--enable-debug], [build with additional debugging code])],
+    [CFLAGS="$CFLAGS -g -DDEBUG -O0"])
+AM_CONDITIONAL(DEBUG, test x"$debug" = x"true")
+
 # Checks for libraries.
-LIB_ANL="-lanl"
-LIB_EV="-lev"
-AC_CHECK_LIB([anl], [getaddrinfo_a], [AC_SUBST(LIB_ANL)])
-AC_CHECK_LIB([ev], [ev_default_loop], [AC_SUBST(LIB_EV)], [libev=no])
+LIB_MILL="-lmill"
+AC_CHECK_LIB([mill], [now], [AC_SUBST(LIB_MILL)])
 
 # Checks for header files.
 AC_HEADER_ASSERT

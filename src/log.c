@@ -1,7 +1,7 @@
 /*
  * log.c - log functions
  *
- * Copyright (C) 2014 - 2015, Xiaoxiao <i@xiaoxiao.im>
+ * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 #include <time.h>
 #include "log.h"
 
+
 void __log(FILE *stream, const char *format, ...)
 {
 	time_t now = time(NULL);
@@ -39,8 +40,8 @@ void __log(FILE *stream, const char *format, ...)
 	fflush(stream);
 }
 
+
 void __err(const char *msg)
 {
 	__log(stderr, "%s: %s", msg, strerror(errno));
 }
-
