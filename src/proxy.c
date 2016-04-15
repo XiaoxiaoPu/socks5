@@ -1,5 +1,5 @@
 /*
- * socks5.h - SOCKS5 worker
+ * proxy.c - proxy worker
  *
  * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
@@ -17,11 +17,43 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SOCKS5_H
-#define SOCKS5_H
-
+#include <errno.h>
 #include <libmill.h>
+#include <stdint.h>
+#include <string.h>
+#include "log.h"
+#include "socks5.h"
+#include "tcprelay.h"
 
-extern int socks5_accept(tcpsock sock, char *host, int *port);
 
-#endif
+coroutine void worker(tcpsock sock)
+{
+    int64_t deadline = now() + 10000;
+
+    // get socks5 request
+    char host[257];
+    int port;
+    if (socks5_accept(sock, host, &port) != 0)
+    {
+        return;
+    }
+
+    LOG("connect %s:%d", host, port);
+
+    ipaddr addr = ipremote(host, port, IPADDR_PREF_IPV4, deadline);
+    if (errno != 0)
+    {
+        tcpclose(sock);
+        return;
+    }
+
+    tcpsock conn = tcpconnect(addr, deadline);
+    if (errno != 0)
+    {
+        tcpclose(sock);
+        return;
+    }
+
+    tcprelay(sock, conn);
+    LOG("connection closed");
+}

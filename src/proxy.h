@@ -1,5 +1,5 @@
 /*
- * socks5.h - SOCKS5 worker
+ * proxy.h - proxy worker
  *
  * Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
  *
@@ -17,11 +17,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SOCKS5_H
-#define SOCKS5_H
+#ifndef PROXY_H
+#define PROXY_H
 
 #include <libmill.h>
 
-extern int socks5_accept(tcpsock sock, char *host, int *port);
+coroutine extern void worker(tcpsock sock);
 
 #endif

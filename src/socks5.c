@@ -29,10 +29,7 @@
 #include "tcprelay.h"
 
 
-coroutine static void proxy(tcpsock sock, const char *host, const char *port);
-
-
-coroutine void worker(tcpsock sock)
+int socks5_accept(tcpsock sock, char *host, int *port)
 {
     int64_t deadline = now() + 10000;
     uint8_t buf[10];
@@ -162,8 +159,6 @@ coroutine void worker(tcpsock sock)
         {
             goto cleanup;
         }
-        char host[257];
-        char port[15];
         if (atyp == 0x01)
         {
             // IPv4 address
@@ -211,13 +206,13 @@ coroutine void worker(tcpsock sock)
             goto server_reply;
         }
 
-        uint8_t _port[2];
-        tcprecv(sock, _port, 2, deadline);
+        uint16_t _port;
+        tcprecv(sock, &_port, 2, deadline);
         if (errno != 0)
         {
             goto cleanup;
         }
-        sprintf(port, "%u", ntohs(*(uint16_t *)_port));
+        *port = ntohs(_port);
 
         // SOCKS5 SERVER REPLY
         // +-----+-----+-------+------+----------+----------+
@@ -260,35 +255,10 @@ coroutine void worker(tcpsock sock)
         {
             goto cleanup;
         }
-        go(proxy(sock, host, port));
-        return;
+        return 0;
     }
 
   cleanup:
     tcpclose(sock);
-}
-
-
-coroutine static void proxy(tcpsock sock, const char *host, const char *port)
-{
-    int64_t deadline = now() + 10000;
-
-    LOG("connect %s:%d", host, atoi(port));
-
-    ipaddr addr = ipremote(host, atoi(port), IPADDR_PREF_IPV4, deadline);
-    if (errno != 0)
-    {
-        tcpclose(sock);
-        return;
-    }
-
-    tcpsock conn = tcpconnect(addr, deadline);
-    if (errno != 0)
-    {
-        tcpclose(sock);
-        return;
-    }
-
-    tcprelay(sock, conn);
-    LOG("connection closed");
+    return -1;
 }

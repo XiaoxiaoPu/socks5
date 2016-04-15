@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "log.h"
+#include "proxy.h"
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -32,7 +33,6 @@
 
 static void help(void);
 static void signal_cb(int signo);
-coroutine extern void worker(tcpsock sock);
 
 
 int main(int argc, char **argv)
@@ -149,5 +149,5 @@ static void help(void)
 static void signal_cb(int signo)
 {
     (void)signo;
-    exit(EXIT_SUCCESS);
+    exit(0);
 }
