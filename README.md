@@ -1,10 +1,13 @@
 # socks5 #
 
+[![License](https://api.pxx.io/badge/badge/license-GPL%20v3.0-blue.svg)](https://www.gnu.org/licenses/gpl.html)
+[![Build Status](https://ci.pxx.io/buildStatus/icon?job=socks5)](https://ci.pxx.io/job/socks5)
+
 A simple SOCKS5 server
 
 ## Build ##
 
-### 1. Linux/OS X ###
+### 1. Linux/OS X/FreeBSD ###
 
 install GNU Autotools, then:
 
