@@ -18,7 +18,7 @@ mv libmill-master libmill
 cd libmill
 ./autogen.sh
 ./configure --enable-shared=false
-make
+make libmill.la
 cd ../
 # build muon
 autoreconf -if
@@ -27,7 +27,6 @@ export CPPFLAGS=-I$(pwd)/libmill
 export LDFLAGS=-L$(pwd)/libmill/.libs
 ./configure --prefix=/usr --sysconfdir=/etc
 make
-make check
 sudo make install
 ```
 
@@ -43,7 +42,7 @@ mv libmill-master libmill
 cd libmill
 ./autogen.sh
 ./configure --enable-shared=false --host=arm-unknown-linux-gnueabihf
-make
+make libmill.la
 cd ../
 # build muon
 autoreconf -if
@@ -63,7 +62,7 @@ append `--enable-static` while running `./configure`.
 
 ## License ##
 
-Copyright (C) 2014 - 2016, Xiaoxiao <i@pxx.io>
+Copyright (C) 2016, Xiaoxiao <i@pxx.io>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

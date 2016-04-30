@@ -1,0 +1,43 @@
+# Maintainer:  Xiaoxiao <i@pxx.io>
+
+pkgname=socks5-git
+pkgver=r
+pkgrel=1
+pkgdesc='A simple SOCKS5 server'
+arch=('i686' 'x86_64' 'arm')
+url='https://github.com/XiaoxiaoPu/socks5'
+license=('GPL3')
+makedepends=('git')
+source=('git+https://github.com/XiaoxiaoPu/socks5.git'
+        'https://github.com/sustrik/libmill/archive/master.tar.gz')
+sha256sums=('SKIP'
+            'SKIP')
+
+pkgver() {
+    cd "${srcdir}/socks5"
+    echo "r$(git rev-list --count HEAD)"
+}
+
+prepare() {
+    cd "${srcdir}"
+    rm -rf libmill
+    mv libmill-master libmill
+    cd libmill
+    ./autogen.sh
+    ./configure --enable-shared=false
+    make libmill.la
+}
+
+build() {
+    cd "${srcdir}/socks5"
+    autoreconf -if
+    export CPPFLAGS="-I${srcdir}/libmill"
+    export LDFLAGS="-L${srcdir}/libmill/.libs"
+    ./configure --prefix=/usr --sysconfdir=/etc
+    make
+}
+
+package() {
+    cd "${srcdir}/socks5"
+    make DESTDIR="${pkgdir}" install
+}
